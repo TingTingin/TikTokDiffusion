@@ -3,7 +3,7 @@ import time
 import glob
 import os.path
 import subprocess
-import importlib
+from importlib import util
 import sys
 import re
 
@@ -45,7 +45,7 @@ def check_requirements():
     python = sys.executable
 
     for search_name, req_command in reqs.items():
-        package_search = importlib.util.find_spec(re.sub("[><]=.+", "", search_name))
+        package_search = util.find_spec(re.sub("[><]=.+", "", search_name))
         print(f"Checking TikTokDiffusion Requirement: {search_name}")
 
         present = package_search is not None
