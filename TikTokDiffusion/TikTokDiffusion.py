@@ -7,9 +7,6 @@ import importlib
 import sys
 import re
 
-import yt_dlp
-from yt_dlp import YoutubeDL
-
 reqs = {'gitpython': ['pip show gitpython', "WARNING"],
         'ipython': ['pip show ipython', "WARNING"],
         'matplotlib': "matplotlib>=3.2.2",
@@ -90,6 +87,8 @@ import string
 import re
 from multiprocessing import Pipe
 import static_ffmpeg
+import yt_dlp
+from yt_dlp import YoutubeDL
 
 static_ffmpeg.add_paths()
 shutil.copy("webui-user.bat", "TikTok-Diffusion-webui-user.bat")
