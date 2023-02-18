@@ -1,0 +1,35 @@
+{
+  "name": "TikTok Diffusion",
+  "short_name": "TDF",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#5175C2",
+  "description": "Reduce Diffuse ReDiffuse",
+  "orientation": "natural",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "Icons/Logo.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "Icons/Logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "Icons/Logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "Icons/Logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
