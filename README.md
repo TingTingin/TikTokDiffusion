@@ -15,7 +15,7 @@ TingTingin in his infinte wisdom has made it fairly simple to install **TikTokDi
 - First make sure you have [autoMATIC1111/stable-diffusion-webui](https://github.com/AUTOMATIC1111/stable-diffusion-webui) installed (This will change in future but currently is required)
   - [How To Install Automatic1111](https://www.youtube.com/watch?v=eU9D7PyE4iM)
  
-- Then download TikTokDiffusion [here](TikTokDiffusion.zip)
+- Then download TikTokDiffusion [here](https://github.com/TingTingin/TikTokDiffusion/archive/refs/heads/main.zip)
 - Copy the downloaded contents of the TikTokDiffusion.zip to your stable-diffusion-webui folder
 - Run the TikTokDiffusion.bat file
 - Wait for installation to complelte and TikTokDiffusion will automatically run both the webui and itself after installation
