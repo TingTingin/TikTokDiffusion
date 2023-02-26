@@ -22,7 +22,7 @@ TingTingin in his infinte wisdom has made it fairly simple to install **TikTokDi
 - [Recommended Model For Realistic Results (Unrealitymix v10)](https://civitai.com/models/12967/unrealitymix-v10)
   - I made this model for the purpose of getting realistic results its not necessary (any Stable Diffusion model you have will work) you can see samples of this model with TikTokDiffusion Below
   - Left is the original video right is the replacement with emma watson
-    - ![emma korean_smaller 1](https://user-images.githubusercontent.com/36141041/221387413-4bbf98ce-57ac-4e4b-bd3d-b99fc0f1497b.gif)
+   - ![emma korean_smaller 1](https://user-images.githubusercontent.com/36141041/221387413-4bbf98ce-57ac-4e4b-bd3d-b99fc0f1497b.gif)
 ![emma korean_smaller 2](https://user-images.githubusercontent.com/36141041/221387417-0b3dc844-ac15-437a-a945-bf29a5dd60f5.gif)
 ![emma korean_smaller 3](https://user-images.githubusercontent.com/36141041/221387419-3c02827c-0b43-43fc-a7b4-36333c422023.gif)
 ![emma korean_smaller 4](https://user-images.githubusercontent.com/36141041/221387572-c0db7dad-d66e-48f4-9f34-e3239b88de7b.gif)
