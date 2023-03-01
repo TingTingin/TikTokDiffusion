@@ -1003,13 +1003,7 @@ def main(page: ft.Page):
         if not generating and not killed:
             completed()
 
-    try:
-        api = webuiapi.WebUIApi(host=server.split(":")[0], port=server.split(":")[1])
-    except:
-        error_text.value = "Can't Connect to Control Net"
-        show_banner()
-        page.update()
-
+    api = webuiapi.WebUIApi(host=server.split(":")[0], port=server.split(":")[1])
     sampler_options = api.get_samplers()
     option_list = []
     for option in sampler_options:
@@ -1019,12 +1013,21 @@ def main(page: ft.Page):
     sampler_dropdown_control = DropDown(name="Sampler", options=option_list, default_val="Euler")
     sampler_dropdown = sampler_dropdown_control.dropdown_creator()
 
+    failed = False
+    try:
+        api.get_ctrlnet_model_list()
+    except Exception:
+        failed = True
+
     processors = ["No Processor Selected", "canny", "hed", "mlsd", "depth", "normal_map", "depth_leres", "openpose",
                   "fake_scribble",
                   "segmentation"]
-    control_net_models = ["No Model Selected"] + api.get_ctrlnet_model_list()["model_list"]
-    toggles = ["OFF", "ON", "LowVram"]
+    control_net_models = ["No Model Selected"]
 
+    if not failed:
+        control_net_models += api.get_ctrlnet_model_list()["model_list"]
+
+    toggles = ["OFF", "ON", "LowVram"]
     control_net_model_dropdown = DropDown(name="Control Net Model",
                                           options=control_net_models,
                                           default_val=control_net_models[0])
@@ -1033,7 +1036,6 @@ def main(page: ft.Page):
     control_net_processor_dropdown = DropDown(name="Control Net Processor",
                                               options=processors,
                                               default_val=processors[0])
-
     control_net_processor_dropdown_control = control_net_processor_dropdown.dropdown_creator()
 
     control_net_toggle_dropdown = DropDown(name="Control Net Toggle",
