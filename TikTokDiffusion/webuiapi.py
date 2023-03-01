@@ -16,11 +16,13 @@ class WebUIApiResult:
     def image(self):
         return self.images[0]
 
+
 def b64_img(image: Image):
     buffered = io.BytesIO()
     image.save(buffered, format="PNG")
-    img_base64 = 'data:image/png;base64,' + str(base64.b64encode(buffered.getvalue()), 'utf-8')
+    img_base64 = str(base64.b64encode(buffered.getvalue()), 'utf-8')
     return img_base64
+
 
 class WebUIApi:
     def __init__(self,
@@ -29,10 +31,12 @@ class WebUIApi:
                  baseurl=None,
                  sampler='Euler a',
                  steps=20):
+
         if baseurl is None:
-            baseurl = f'http://{host}:{port}/sdapi/v1'
-                
-        self.baseurl = baseurl
+            self.baseurl = f'http://{host}:{port}/sdapi/v1'
+
+        self.ctrlnet_baseurl = f'http://{host}:{port}'
+        self.imgurl = f'{self.baseurl}/img2img'
         self.default_sampler = sampler
         self.default_steps = steps
         
@@ -136,7 +140,7 @@ class WebUIApi:
 
 
     def img2img(self,
-                images=[], # list of PIL Image
+                images=None, # list of PIL Image
                 mask_image=None, # PIL Image mask
                 resize_mode=0,
                 denoising_strength=0.75,
@@ -165,18 +169,35 @@ class WebUIApi:
                 s_tmax=0,
                 s_tmin=0,
                 s_noise=1,
-                override_settings={},
+                override_settings=None,
                 include_init_images=False,
                 steps=None,
                 sampler_index=None,
+                controlnet_module="hed",
+                controlnet_model="",
+                controlnet_weight=1,
+                controlnet_lowvram=False,
+                use_control_net=False
+                # controlnet_mask=None,
+                # controlnet_processor_res=64,
+                # controlnet_threshold_a=64,
+                # controlnet_threshold_b=64,
+                # controlnet_guidance=1,
+                # controlnet_guessmode=True,
         ):
+
+        if images is None:
+            images = []
+        if override_settings is None:
+            override_settings = {}
         if sampler_index is None:
             sampler_index = self.default_sampler
         if steps is None:
             steps = self.default_steps
 
+        payload_images = [b64_img(x) for x in images]
         payload = {
-            "init_images": [b64_img(x) for x in images],
+            "init_images": payload_images,
             "resize_mode": resize_mode,
             "denoising_strength": denoising_strength,
             "mask_blur": mask_blur,
@@ -209,11 +230,32 @@ class WebUIApi:
             "sampler_index": sampler_index,
             "include_init_images": include_init_images,
         }
+
         if mask_image is not None:
-            payload['mask']= b64_img(mask_image)
-            
-        response = self.session.post(url=f'{self.baseurl}/img2img', json=payload)
-        return self._to_api_result(response)
+            payload['mask'] = b64_img(mask_image)
+
+        if use_control_net:
+            payload["controlnet_input_image"] = payload_images
+            payload["controlnet_module"] = controlnet_module
+            payload["controlnet_model"] = controlnet_model
+            payload["controlnet_weight"] = controlnet_weight
+            payload["controlnet_resize_mode"] = resize_mode #uses img2img resize mode
+            payload["controlnet_lowvram"] = controlnet_lowvram
+            payload["controlnet_guessmode"] = True
+            #  payload["controlnet_mask"] = controlnet_mask
+            # "controlnet_processor_res": 64,
+            # "controlnet_threshold_a": 64,
+            # "controlnet_threshold_b": 64,
+            # "controlnet_guidance": controlnet_guidance,
+
+        if use_control_net:
+            print("Using ControlNet To Generate Image")
+            response = self.session.post(url=f'{self.ctrlnet_baseurl}/controlnet/img2img', json=payload)
+            return self._to_api_result(response)
+
+        else:
+            response = self.session.post(url=self.imgurl, json=payload)
+            return self._to_api_result(response)
 
     def extra_single_image(self,
                            image, # PIL Image
@@ -335,6 +377,9 @@ class WebUIApi:
     def get_samplers(self):        
         response = self.session.get(url=f'{self.baseurl}/samplers')
         return response.json()
+    def get_ctrlnet_model_list(self):
+        respone = self.session.get(url=f"{self.ctrlnet_baseurl}/controlnet/model_list")
+        return respone.json()
     def get_sd_models(self):        
         response = self.session.get(url=f'{self.baseurl}/sd-models')
         return response.json()
