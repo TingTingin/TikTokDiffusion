@@ -73,19 +73,24 @@ def run(
         seed,
         denoising,
         pipe,
+        frame_gen_even,
         restore_faces,
         server,
+        audio_source,
+        control_net_model,
+        control_net_lowvram,
+        control_net_processor,
         source: Path,
-        yolo_weights=WEIGHTS / 'yolov5m.pt',  # model.pt path(s),
+        yolo_weights=WEIGHTS / 'yolov5x-seg.pt',  # model.pt path(s),
         reid_weights=WEIGHTS / 'osnet_x0_25_msmt17.pt',  # model.pt path,
         tracking_method='strongsort',
         imgsz=(640, 640),  # inference size (height, width)
-        conf_thres=0.25,  # confidence threshold
-        iou_thres=0.45,  # NMS IOU threshold
+        conf_thres=0.5,  # confidence threshold
+        iou_thres=0.5,  # NMS IOU threshold
         max_det=1000,  # maximum detections per image
         device='',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
         save_crop=False,  # save cropped prediction boxes
-        classes=None,  # filter by class: --class 0, or --class 0 2 3
+        classes=0,  # filter by class: --class 0, or --class 0 2 3
         agnostic_nms=False,  # class-agnostic NMS
         augment=False,  # augmented inference
         visualize=False,  # visualize features
@@ -112,6 +117,8 @@ def run(
         max_person_size=150,
         skip_ratio=.80,
         max_frame_skip=2,
+        use_control_net=False,
+        negative_prompt="",
 ):
 
     print(inject_last_image)
@@ -333,6 +340,13 @@ def run(
                                                         print(person.prompt)
 
                                             searching_for_box = False
+
+                                        elif person.track_label is not None:
+                                            if person.track_label > len(func_prompt_list):
+                                                person.prompt = fallback
+                                            else:
+                                                person.prompt = func_prompt_list[int(person.track_label) - 1]
+                                                print(person.prompt)
 
                                 if run_times >= 15:
                                     if not searching_for_box:
@@ -563,7 +577,7 @@ def run(
                             area = (max_x - min_x) * (max_y - min_y)
 
                             if area <= max_person_size:
-                                print(f"Skipping detected person on frame {frame_idx} as they are below the size limit of {org_max_person_size/org_max_person_size}")
+                                print(f"Skipping detected person on frame {frame_idx} as they are below the size limit of {org_max_person_size}")
                                 continue
 
                             # Print the bounding box coordinates
@@ -646,6 +660,7 @@ def run(
 
     for segment in segment_list.segments:
         person = PersonJob(segment.path)
+
         person.segment = segment
 
         person.segment.id = id_dict[person.segment.id] if segment.id is not None else None
@@ -714,7 +729,8 @@ def run(
                     break
         return func_skip_set
 
-    def save_video(path_to_images, framerate, filename):
+    def save_video(path_to_images, framerate, filename, generated_images_folder=""):
+
         filename = name_cleaner(filename)
         if not framerate:
             framerate = 30
@@ -722,10 +738,13 @@ def run(
         non_generated_images = glob.glob(path_to_images+"\*.png")
         generated_images = glob.glob(path_to_images+"\generated_imgs\*.png")
 
-        if not generated_images:
+        if generated_images_folder:
+            generated_images_folder = glob.glob(generated_images_folder+"\*.png")
+
+        if not generated_images_folder:
             images = non_generated_images
         else:
-            images = sorted(non_generated_images+generated_images, key=lambda x: os.path.basename(x))
+            images = sorted(non_generated_images+generated_images_folder, key=lambda x: os.path.basename(x))
 
         sequence = ImageSequenceClip(images, framerate)
         sequence_save_folder = os.path.join(output_path, "videos")
@@ -734,7 +753,8 @@ def run(
             os.makedirs(sequence_save_folder)
 
         save_filename = os.path.join(sequence_save_folder, filename+f" {random.random()}.mp4")
-        sequence.write_videofile(save_filename, framerate)
+
+        sequence.write_videofile(save_filename, framerate, audio=audio_source)
 
     def skip_list_split(list_to_split, sections=5):
         list_length = len(list_to_split)
@@ -773,11 +793,14 @@ def run(
     total_jobs = 0
     for count_job in person_list.group_by_image_path_list:
         total_jobs += len(count_job)
-    total_jobs -= len(skip_set)
+    total_jobs = total_jobs-len(skip_set)
+    org_job_length = total_jobs-len(skip_set)
     done_jobs = 0
+    generated_list = {}
+    last_time = 0
     for personjob_list_count, personjob_list in enumerate(person_list.group_by_image_path_list):
 
-        if frame_gen_all:
+        if frame_gen_all or frame_gen_even:
             if personjob_list_count % 2 != 0:
                 continue
 
@@ -785,6 +808,7 @@ def run(
         best_ssim = 0
         variation = 0
         skip_this_frame = False
+        #hack need to change later
 
         if skip_set:
             for set_personjob in personjob_list:
@@ -803,6 +827,12 @@ def run(
             done_jobs += len(personjob_list)
             remaining_jobs = total_jobs-done_jobs
             print(f"{remaining_jobs} jobs remaining")
+
+            for personjob in personjob_list:
+                if generated_list.get(personjob.prompt) is None:
+                    generated_list[personjob.prompt] = 1
+                else:
+                    generated_list[personjob.prompt] += 1
             continue
 
         for ssim_amount in ssim_loop:
@@ -848,6 +878,7 @@ def run(
                 break
 
             completed_images = []
+
             for person_count, personjob in enumerate(personjob_list, 1):
                 if personjob.prompt is None:
                     if ignore_if_no_prompt:
@@ -867,7 +898,10 @@ def run(
                         print(f"generating prompt: '{print_prompt}' for person {person_count} again since loopback is {loopback} current: {loop_times}/{loopback}")
 
                     if loopback > 1 and loop_times > 1 and person_list.generated_images:
-                        gen_image = image.images[-1]
+                        if not use_control_net:
+                            gen_image = image.images[-1]
+                        else:
+                            gen_image = image.images[0]
 
                     elif inject_last_image and last_generated_image_for_injection is not None:
                         last_generated_image = last_generated_image_for_injection
@@ -895,8 +929,27 @@ def run(
                         if instruction == "STOP":
                             return False
 
+                    prompt = personjob.prompt
+                    gen_times = generated_list.get(prompt)
+
+                    transition_frames = 30
+                    mid_transition_frames = 15
+
+                    if loop_times <= 1:
+                        print(f"generating prompt: '{print_prompt}' for person {person_count}")
+
+                    if last_time != 0:
+                        cur_time = time.perf_counter()
+                        runtime = cur_time-last_time
+                        print(runtime)
+                        total_time = round(runtime*total_jobs)
+                        print("")
+                        print(f"estimated time remaining {total_time} seconds")
+                        print("")
+
+                    last_time = time.perf_counter()
                     image = api.img2img(images=[gen_image],
-                                        prompt=personjob.prompt,
+                                        prompt=prompt,
                                         mask_image=personjob.get_masked_image(False),
                                         inpainting_fill=1,
                                         cfg_scale=cfg,
@@ -905,11 +958,18 @@ def run(
                                         steps=steps,
                                         sampler_index=sampler,
                                         restore_faces=restore_faces,
-                                        negative_prompt="",
+                                        negative_prompt=negative_prompt,
                                         height=height,
                                         width=width,
                                         seed=seed+loop_times+api_ssim_amount,
-                                        subseed_strength=variation)
+                                        subseed=ssim_amount,
+                                        subseed_strength=variation,
+                                        use_control_net=use_control_net,
+                                        controlnet_model=control_net_model,
+                                        controlnet_module=control_net_processor,
+                                        controlnet_lowvram=control_net_lowvram
+                                        )
+
                     person_list.add_to_generate_list(personjob)
 
                     if loop_times == loopback:
@@ -917,6 +977,9 @@ def run(
                         done_jobs += 1
                         remaining_jobs = total_jobs - done_jobs
                         print(f"{remaining_jobs} jobs remaining")
+
+                        if use_control_net:
+                            image.images = [image.images[0]]
 
                         completed_images.append([image.images[-1], personjob.get_masked_image(get_hole=True)])
 
@@ -929,61 +992,21 @@ def run(
             print("")
 
     generated_images_save_folder = os.path.join(save_folder, "generated_imgs")
-    if frame_gen_auto:
-        print(f"Generating {len(skip_set)} skipped frames")
+    if frame_gen_auto or frame_gen_even:
+
+        if frame_gen_auto:
+            print(f"Generating {len(skip_set)} skipped frames")
+
         RIFE.frame_generator(path_of_images=save_folder, save_folder=generated_images_save_folder)
-        save_video(path_to_images=save_folder, filename=name_prompt, framerate=fps)
+        save_video(path_to_images=save_folder, filename=name_prompt, framerate=fps, generated_images_folder=generated_images_save_folder)
+
     elif frame_gen_all:
         RIFE.frame_generator(path_of_images=save_folder, save_folder=generated_images_save_folder)
         RIFE.frame_generator(path_of_images=generated_images_save_folder, save_folder=generated_images_save_folder)
         save_video(path_to_images=generated_images_save_folder, filename=name_prompt, framerate=fps)
+
     else:
         save_video(path_to_images=save_folder, filename=name_prompt, framerate=fps)
 
     print(f"Saving video to {os.path.join(output_path, 'videos')}")
-
     return True
-
-
-def parse_opt():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--yolo-weights', nargs='+', type=Path, default=WEIGHTS / 'yolov5x-seg.pt', help='model.pt path(s)')
-    parser.add_argument('--reid-weights', type=Path, default=WEIGHTS / 'osnet_x0_25_msmt17.pt')
-    parser.add_argument('--tracking-method', type=str, default='strongsort', help='strongsort, ocsort, bytetrack')
-    parser.add_argument('--imgsz', '--img', '--img-size', nargs='+', type=int, default=[640], help='inference size h,w')
-    parser.add_argument('--conf-thres', type=float, default=0.5, help='confidence threshold')
-    parser.add_argument('--iou-thres', type=float, default=0.5, help='NMS IoU threshold')
-    parser.add_argument('--max-det', type=int, default=1000, help='maximum detections per image')
-    parser.add_argument('--classes', nargs='+', type=int, help='filter by class: --classes 0, or --classes 0 2 3', default=0)
-    parser.add_argument('--agnostic-nms', action='store_true', help='class-agnostic NMS')
-    parser.add_argument('--half', action='store_true', help='use FP16 half-precision inference')
-    parser.add_argument('--dnn', action='store_true', help='use OpenCV DNN for ONNX inference')
-    parser.add_argument('--retina-masks', action='store_true', help='whether to plot masks in native resolution', default=True)
-    opt = parser.parse_args()
-    opt.imgsz *= 2 if len(opt.imgsz) == 1 else 1  # expand
-    print_args(vars(opt))
-    return opt
-
-
-def test_main(image_folder, skip_if_exists, steps, face_match_sensitivity,func_prompt_list, check_faces,
-              inject_last_image, loopback, variation_scaling, ssim_retry, seed_scaling, stable_diffusion_folder,
-              output_path, default_save_folder, frame_gen_all, sampler, fps, frame_gen_auto, prompt_by_body,
-              ssim_threshold, frame_gen_skip_ratio, cfg, height, width, denoising, restore_faces, seed, pipe, server):
-
-    opt = parse_opt()
-    device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    check_requirements(requirements=ROOT / 'requirements.txt', exclude=('tensorboard', 'thop'))
-
-    run(source=Path(image_folder), **vars(opt),
-        debug=False, skip_if_exists=skip_if_exists, steps=steps, face_match_sensitivity=face_match_sensitivity,
-        func_prompt_list=func_prompt_list, check_faces=check_faces, inject_last_image=inject_last_image,
-        loopback=loopback, variation_scaling=variation_scaling, ssim_retry=ssim_retry, seed_scaling=seed_scaling,
-        stable_diffusion_folder=stable_diffusion_folder, device="", default_save_folder=default_save_folder,
-        output_path=output_path, frame_gen_all=frame_gen_all, sampler=sampler, fps=fps, frame_gen_auto=frame_gen_auto,
-        prompt_by_body=prompt_by_body, ssim_threshold=ssim_threshold, skip_ratio=frame_gen_skip_ratio, cfg=cfg,
-        height=height, width=width, denoising=denoising, restore_faces=restore_faces, seed=seed, pipe=pipe, server=server)
-
-
-if __name__ == "__main__":
-    opt = parse_opt()
-    testmain(opt)
