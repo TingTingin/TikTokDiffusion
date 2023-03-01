@@ -5,6 +5,7 @@ import os.path
 import subprocess
 from importlib import util
 import sys
+from pathlib import Path
 import re
 
 reqs = {'gitpython': ['pip show gitpython', "WARNING"],
@@ -47,8 +48,16 @@ def check_requirements():
     for search_name, req_command in reqs.items():
         package_search = util.find_spec(re.sub("[><]=.+", "", search_name))
         print(f"Checking TikTokDiffusion Requirement: {search_name}")
-
         present = package_search is not None
+
+        if search_name.find("numpy") != -1:
+            pipoutput = subprocess.run(fr'pip show numpy', capture_output=True, text=True)
+            if pipoutput.stdout.find("1.23.3") == -1:
+                subprocess.run(fr'"{python}" -m pip install numpy==1.23.3 --upgrade')
+                print(f"Installing TikTokDiffusion Requirement: {req_command}")
+
+            continue
+
         if not present:
             if type(req_command) == list:
                 try:
@@ -69,10 +78,11 @@ def check_requirements():
 
 check_requirements()
 
+import yt_dlp
+from yt_dlp import YoutubeDL
 import PIL.Image
 import flet as ft
 import requests
-import track
 from pathlib import Path
 import pprint
 import base64
@@ -87,8 +97,6 @@ import string
 import re
 from multiprocessing import Pipe
 import static_ffmpeg
-import yt_dlp
-from yt_dlp import YoutubeDL
 
 static_ffmpeg.add_paths()
 shutil.copy("webui-user.bat", "TikTok-Diffusion-webui-user.bat")
@@ -100,10 +108,23 @@ with open("TikTok-Diffusion-webui-user.bat", "r") as bat_file:
     with open("TikTok-Diffusion-webui-user.bat", "w") as tiktok_bat:
         tiktok_bat.write(output_text)
 
-command = 'start /wait cmd /c TikTok-Diffusion-webui-user.bat'
-process = subprocess.Popen(command, shell=True)
+time.sleep(1)
 
-print("Launching Stable Diffusion With TikTokDiffusion")
+sd_open = False
+try:
+    response = requests.get(r"http://127.0.0.1:7860")
+    sd_open = True
+except Exception as e:
+    sd_open = False
+
+if not sd_open:
+    command = 'start /wait cmd /c TikTok-Diffusion-webui-user.bat'
+    process = subprocess.Popen(command, shell=True)
+    print("Launching Stable Diffusion With TikTokDiffusion")
+
+else:
+    print("Connecting To Stable Diffusion")
+
 stable_diffusion_folder = str(Path(__file__).parent.parent)
 stable_diffusion_save_subfolder = r"outputs\Tiktok Diffusion"
 output_path = os.path.join(stable_diffusion_folder, stable_diffusion_save_subfolder)
@@ -113,6 +134,7 @@ url_source = False
 generating = False
 video_fps = None
 video_source = False
+audio_source = False
 ui, stable_diffusion_conn = Pipe()
 
 
@@ -302,7 +324,7 @@ class DropDown:
             option = ft.dropdown.Option(option)
             option_list.append(option)
 
-        self.dropdown = ft.Dropdown(options=option_list, label=name, value=default_val,label_style=(ft.TextStyle(font_family="Main", size=25, color=ft.colors.BLACK)))
+        self.dropdown = ft.Dropdown(options=option_list, label=name, value=default_val, label_style=(ft.TextStyle(font_family="Main", size=25, color=ft.colors.BLACK)))
 
         if on_change:
             self.dropdown.on_change = on_change
@@ -317,7 +339,7 @@ class TextFieldButton:
         self.button_text = button_text
         self.no_button = no_button
         self.on_submit = on_submit
-        self.textfield = ft.TextField(value=default_field_val, label=field_name, label_style=(ft.TextStyle(font_family="Main", size=30, color=ft.colors.BLACK)), height=70, expand=1, autofocus=True, hint_text=hint_text,
+        self.textfield = ft.TextField(value=default_field_val, label=field_name, label_style=(ft.TextStyle(font_family="Main", size=30, color=ft.colors.BLACK)), height=70, autofocus=True, hint_text=hint_text,
                                       helper_style=ft.TextStyle(size=12, color=ft.colors.GREEN, weight=ft.FontWeight.BOLD), border=border)
 
         if self.on_submit:
@@ -480,25 +502,27 @@ def main(page: ft.Page):
     server_link = ft.TextField(label="Server", label_style=(ft.TextStyle(font_family="Main", size=30, color=ft.colors.BLACK)), height=70, hint_text="Server", value=server)
     progress_text = ft.Text("Waiting For Stable Diffusion", font_family="Main", animate_scale=1000)
     progress = ft.Column([server_link, progress_bar], height=75)
-    stable_waiter = ft.AlertDialog(title=progress_text, shape=ft.RoundedRectangleBorder(radius=5), content=progress, modal=True)
-    stable_waiter.open = True
-    page.add(stable_waiter)
 
-    for i in range(100):
-        time.sleep(1)
-        try:
-            response = requests.get(r"http://"+server_link.value)
-            if response.status_code == 200:
-                print(f"Successfully connected to {server_link.value}")
-                stable_waiter.open = False
-                break
-        except Exception as e:
-            pass
+    if not sd_open:
+        stable_waiter = ft.AlertDialog(title=progress_text, shape=ft.RoundedRectangleBorder(radius=5), content=progress, modal=True)
+        stable_waiter.open = True
+        page.add(stable_waiter)
 
+        for i in range(100):
+            time.sleep(1)
+            try:
+                response = requests.get(r"http://"+server_link.value)
+                if response.status_code == 200:
+                    print(f"Successfully connected to {server_link.value}")
+                    stable_waiter.open = False
+                    break
+            except Exception as e:
+                print(f"Couldnt connect to Stable Diffusion at {server_link.value} trying again in 1 second")
+        time.sleep(3)
     server = server_link.value
-    time.sleep(3)
-    image_types = (".png", ".jpg")
-    video_types = (".mp4", ".webm")
+
+    image_types = (".png", ".jpg", "jpeg", "webp")
+    video_types = (".mp4", ".webm", "m4v")
     image_error_text = "Found No Images In This Folder"
     image_source = None
     cfg_slider_control = Slider(name="CFG", min_val=0, max_val=50, page=page, divisions=50, data_type=int, starting_val=7)
@@ -521,16 +545,6 @@ def main(page: ft.Page):
 
     loopback_slider_control = Slider(name="LoopBack", min_val=1, max_val=20, page=page, divisions=19, data_type=int, starting_val=1, small_num=True)
     loopback_slider = loopback_slider_control.slider_creator()
-    option_list = []
-    sampler_options = webuiapi.WebUIApi().get_samplers()
-
-    for option in sampler_options:
-        sampler = option.get("name")
-        if sampler is not None:
-            option_list.append(sampler)
-
-    sampler_dropdown_control = DropDown(name="Sampler", options=option_list, default_val="Euler")
-    sampler_dropdown = sampler_dropdown_control.dropdown_creator()
 
     restore_faces_button_control = Button("Restore Faces", True, page)
     restore_faces_button = restore_faces_button_control.button_creator()
@@ -553,11 +567,13 @@ def main(page: ft.Page):
     track_bodies_control = Button("Track Bodies", False, page)
     track_bodies_button = track_bodies_control.button_creator()
 
-    seed_enter_number_control = EnterNumber("Seed", -1, data_type=int, page=page)
+    seed_enter_number_control = EnterNumber("Seed", 10, data_type=int, page=page)
     seed_enter_number = seed_enter_number_control.enter_number_creator()
 
     prompt_textfield_button_control = TextFieldButton(button_text="+Add Prompt", field_name="Prompt", on_submit=lambda x: person_button_adder(x), on_click=lambda x: person_button_adder(x))
+    negative_prompt_textfield = ft.TextField(label="Negative Prompt", label_style=(ft.TextStyle(font_family="Main", size=30, color=ft.colors.BLACK)), height=70, width=50, autofocus=True, helper_style=ft.TextStyle(size=12, color=ft.colors.GREEN, weight=ft.FontWeight.BOLD), expand=True)
     prompt_textfield_button = prompt_textfield_button_control.textfield_button_creator()
+    prompt_textfield_button_control.textfield.width = 500
 
     def check_skip_if_exists(event=None):
         save = save_folder_textfield_button_control
@@ -589,6 +605,7 @@ def main(page: ft.Page):
 
     save_folder_textfield_button = save_folder_textfield_button_control.textfield_button_creator()
     save_folder_textfield_button.padding = ft.padding.only(17)
+    save_folder_textfield_button_control.textfield.expand = True
 
     def get_dir():
         global exit_loop
@@ -679,6 +696,7 @@ def main(page: ft.Page):
         global video_fps
         global video_source
         global url_source
+        global audio_source
         exit_loop = False
 
         if not path:
@@ -713,6 +731,7 @@ def main(page: ft.Page):
             zfill = str(len(str(frame_count))).zfill(2)
 
             save_path = os.path.join(save_dir, f'%{zfill}d.png')
+            audio_path = os.path.join(os.path.dirname(save_dir), f'{safe_dir_name}.mp3')
 
             if not os.path.exists(save_dir):
                 os.makedirs(save_dir)
@@ -725,14 +744,18 @@ def main(page: ft.Page):
 
                     if video_source != path:
                         video_source = path
+                        audio_source = audio_path
                         update_image_source(path=save_dir)
                     return
 
             video = ffmpeg.input(path)
+            audio = ffmpeg.input(path)
             video_or_download_progress.height = 15
             video_or_download_progress.update()
             ffmpeg.output(video, save_path).run()
+            ffmpeg.output(audio, audio_path).run()
             video_source = path
+            audio_source = audio_path
             video_or_download_progress.height = 0
             image_container_control.fps_control.textfield.value = round(video_fps, 2)
             image_container_control.source_control.textfield.value = path
@@ -844,7 +867,7 @@ def main(page: ft.Page):
     similar_trio_control = Trio("Similar Retry", ["OFF", "Variation", "Seed"], page, "Change Amt", "Var Change", 0, 100, 0, 1, 100, 100, float, float, 81, 0, "OFF", ["Seed", "Variation"], ["Variation"], retry_amount_slider_control)
     similar_trio = similar_trio_control.trio_creator()
 
-    frame_gen_trio_control = Trio("Frame Gen", ["OFF", "Auto", "All"], page, "Change Amt", "Max Frame Skip", 0, 100, 0, 6,
+    frame_gen_trio_control = Trio("Frame Gen", ["OFF", "Auto", "All", "Even"], page, "Change Amt", "Max Frame Skip", 0, 100, 0, 6,
                         100, 6, float, int, 81, 2, "OFF", ["Auto"], ["Auto"])
     frame_gen_trio = frame_gen_trio_control.trio_creator()
 
@@ -955,7 +978,7 @@ def main(page: ft.Page):
 
             images = {}
 
-            for i, file in enumerate(files):
+            for i, file in enumerate(files[-120:]):
 
                 if not generating:
                     image_container_control.progress_bar.bar_height = 0
@@ -975,12 +998,60 @@ def main(page: ft.Page):
                 time.sleep(wait_time)
                 image_container_control.image.update()
 
+            time.sleep(2)
+
         if not generating and not killed:
             completed()
+
+    try:
+        api = webuiapi.WebUIApi(host=server.split(":")[0], port=server.split(":")[1])
+    except:
+        error_text.value = "Can't Connect to Control Net"
+        show_banner()
+        page.update()
+
+    sampler_options = api.get_samplers()
+    option_list = []
+    for option in sampler_options:
+        sampler = option.get("name")
+        if sampler is not None:
+            option_list.append(sampler)
+    sampler_dropdown_control = DropDown(name="Sampler", options=option_list, default_val="Euler")
+    sampler_dropdown = sampler_dropdown_control.dropdown_creator()
+
+    processors = ["No Processor Selected", "canny", "hed", "mlsd", "depth", "normal_map", "depth_leres", "openpose",
+                  "fake_scribble",
+                  "segmentation"]
+    control_net_models = ["No Model Selected"] + api.get_ctrlnet_model_list()["model_list"]
+    toggles = ["OFF", "ON", "LowVram"]
+
+    control_net_model_dropdown = DropDown(name="Control Net Model",
+                                          options=control_net_models,
+                                          default_val=control_net_models[0])
+    control_net_model_dropdown_control = control_net_model_dropdown.dropdown_creator()
+
+    control_net_processor_dropdown = DropDown(name="Control Net Processor",
+                                              options=processors,
+                                              default_val=processors[0])
+
+    control_net_processor_dropdown_control = control_net_processor_dropdown.dropdown_creator()
+
+    control_net_toggle_dropdown = DropDown(name="Control Net Toggle",
+                                           options=toggles,
+                                           default_val=toggles[0])
+    control_net_toggle_dropdown_control = control_net_toggle_dropdown.dropdown_creator()
+
+    control_net_row = ft.Row([control_net_toggle_dropdown_control,
+                              control_net_processor_dropdown_control,
+                              control_net_model_dropdown_control])
+    control_net_row = ft.Container(control_net_row,
+                                   border_radius=5,
+                                   margin=ft.margin.only(bottom=10), padding=20)
 
     def generate(event):
         global generating
         global image_source
+        global audio_source
 
         value_getter = ValueGetter()
         image_folder = image_source
@@ -1004,10 +1075,18 @@ def main(page: ft.Page):
         auto_skip_frames = frame_gen_trio_control.dropdown_control.dropdown.value.lower() == "Auto".lower()
         frame_gen_all = frame_gen_trio_control.dropdown_control.dropdown.value.lower() == "All".lower()
         frame_gen_auto = frame_gen_trio_control.dropdown_control.dropdown.value.lower() == "Auto".lower()
+        frame_gen_even = frame_gen_trio_control.dropdown_control.dropdown.value.lower() == "Even".lower()
         frame_gen_skip_ratio = frame_gen_trio_control.slider_one_control.slider.value if frame_gen_trio_control.dropdown_control.dropdown.value == "Auto" else 100
+        negative_prompt = negative_prompt_textfield.value
+        use_control_net = True if control_net_toggle_dropdown.dropdown.value != "OFF" else False
+        control_net_lowvram = True if control_net_toggle_dropdown.dropdown.value == "LowVram" else False
+        processor = control_net_processor_dropdown.dropdown.value
+        control_net_model = control_net_model_dropdown.dropdown.value
+
         fps = image_container_control.fps_control.textfield.value
         sampler = sampler_dropdown_control.dropdown.value
         track_bodies = track_bodies_control.button.text == "ON"
+        audio_source = audio_source if audio_source else False
         pprint.pprint(locals())
 
         if all([func_prompt_list, image_folder]):
@@ -1015,24 +1094,54 @@ def main(page: ft.Page):
 
             def this_func():
                 global generating
+                import track
+                import importlib
+
+                importlib.reload(track)
                 time.sleep(1)
                 print("starting")
                 interrupt_button_container.expand = 1
                 interrupt_button_container.width = None
                 page.update()
 
-                status = track.test_main(image_folder=image_folder, skip_if_exists=skip_if_exists, steps=steps,
-                                face_match_sensitivity=face_match_sensitivity, func_prompt_list=func_prompt_list,
-                                inject_last_image=inject_last_image, loopback=loopback,
-                                variation_scaling=variation_scaling,
-                                ssim_retry=ssim_retry, seed_scaling=seed_scaling,
-                                stable_diffusion_folder=stable_diffusion_folder,
-                                check_faces=check_faces, default_save_folder=default_save_folder,
-                                output_path=output_path,
-                                frame_gen_all=frame_gen_all, frame_gen_auto=frame_gen_auto, sampler=sampler, fps=fps,
-                                prompt_by_body=track_bodies, ssim_threshold=ssim_threshold,
-                                frame_gen_skip_ratio=frame_gen_skip_ratio, cfg=cfg, height=height, width=width,
-                                denoising=denoising, restore_faces=restore_faces, seed=seed, pipe=stable_diffusion_conn,server=server)
+                track.run(
+                    source=Path(image_folder),
+                    skip_if_exists=skip_if_exists,
+                    steps=steps,
+                    face_match_sensitivity=face_match_sensitivity,
+                    func_prompt_list=func_prompt_list,
+                    inject_last_image=inject_last_image,
+                    loopback=loopback,
+                    variation_scaling=variation_scaling,
+                    ssim_retry=ssim_retry,
+                    seed_scaling=seed_scaling,
+                    stable_diffusion_folder=stable_diffusion_folder,
+                    check_faces=check_faces,
+                    default_save_folder=default_save_folder,
+                    output_path=output_path,
+                    frame_gen_all=frame_gen_all,
+                    frame_gen_auto=frame_gen_auto,
+                    sampler=sampler,
+                    fps=fps,
+                    prompt_by_body=track_bodies,
+                    ssim_threshold=ssim_threshold,
+                    skip_ratio=frame_gen_skip_ratio,
+                    cfg=cfg,
+                    height=height,
+                    width=width,
+                    denoising=denoising,
+                    restore_faces=restore_faces,
+                    seed=seed,
+                    pipe=stable_diffusion_conn,
+                    server=server,
+                    audio_source=audio_source,
+                    frame_gen_even=frame_gen_even,
+                    use_control_net=use_control_net,
+                    control_net_model=control_net_model,
+                    control_net_processor=processor,
+                    control_net_lowvram=control_net_lowvram,
+                    negative_prompt=negative_prompt
+                    )
 
                 generating = False
                 interrupt_button_container.expand = 0
@@ -1046,7 +1155,7 @@ def main(page: ft.Page):
             else:
                 show_generation_preview(default_save_folder)
 
-    left_column = ft.Column([image_container, person_prompts_container, prompt_textfield_button], expand=True)
+    left_column = ft.Column([image_container, person_prompts_container, ft.Row([prompt_textfield_button, negative_prompt_textfield])], expand=True)
     left_container = ft.Container(content=left_column, expand=6)
 
     layout_row = ft.Row([sampler_dropdown, seed_enter_number, loopback_slider, face_match_slider])
@@ -1068,7 +1177,7 @@ def main(page: ft.Page):
     generate_and_interrupt = ft.Row([generate_button_container, interrupt_button_container])
     generate_container = ft.Container(generate_and_interrupt, alignment=ft.alignment.bottom_center)
 
-    right_column = ft.Column([completion_dialog, source_picker, steps_slider, width_slider, height_slider, cfg_slider, denoising_slider, row_container, button_container, trio_container, save_folder_textfield_button], spacing=0, scroll=ft.ScrollMode.AUTO, height=1000, expand=True)
+    right_column = ft.Column([completion_dialog, source_picker, steps_slider, width_slider, height_slider, cfg_slider, denoising_slider, row_container, button_container, trio_container, save_folder_textfield_button, control_net_row], spacing=0, scroll=ft.ScrollMode.AUTO, height=1000, expand=True)
     generate_column = ft.Column([right_column, generate_container])
     right_container = ft.Container(content=generate_column, expand=4, padding=ft.padding.only(top=30, right=2))
 
