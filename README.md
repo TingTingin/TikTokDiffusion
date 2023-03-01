@@ -8,6 +8,20 @@
 ![faces](https://user-images.githubusercontent.com/36141041/218229029-c1df7fc5-09f2-4e27-9cfb-f98757686f00.gif)
 
 ---
+# Changelog
+- **Ver. 0.0.2** - 18 Mar. 2023
+  - ## Added
+    - Added Control Net support (*no info on usage yet will make video later*)
+      - To use make sure you have the [**control net extension**](https://github.com/Mikubill/sd-webui-controlnet) installed for your webui 
+      - Enable "Allow other script to control this extension" in you webui control net settings
+    - Added "Even" frame generation mode
+    - TikokDiffusion will now connect to existing stable diffusion instance if already open at http://127.0.0.1:7860
+  - ## Fixes
+    - Various bug fixes 
+    
+- **Ver. 0.0.1** - 18 Feb. 2023
+  - Intial Release
+---
 ![How is tiktok diffusion](https://user-images.githubusercontent.com/36141041/218224228-aabfecfb-5067-43f1-a878-02d9e8508b66.png)
 
 TingTingin in his infinte wisdom has made it fairly simple to install **TikTokDiffusion:**
